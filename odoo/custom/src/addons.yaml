@@ -1,0 +1,10 @@
+out-of-reality: "*"
+
+rest-framework:
+  - fastapi
+
+web-api:
+  - endpoint_route_handler
+
+web:
+  - web_widget_mpld3_chart

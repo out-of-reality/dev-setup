@@ -1,0 +1,52 @@
+# See https://github.com/Tecnativa/doodba#optodoocustomsrcreposyaml
+./odoo:
+  defaults:
+    # Shallow repositories ($DEPTH_DEFAULT=1) are faster & thinner
+    # You may need a bigger depth when merging PRs (use $DEPTH_MERGE
+    # for a sane value of 100 commits)
+    depth: $DEPTH_DEFAULT
+  remotes:
+    ocb: https://github.com/OCA/OCB.git
+    odoo: https://github.com/odoo/odoo.git
+    openupgrade: https://github.com/OCA/OpenUpgrade.git
+  target: ocb $ODOO_VERSION
+  merges:
+    - ocb $ODOO_VERSION
+    # Example of a merge of the PR with the number <PR>
+    # - oca refs/pull/<PR>/head
+
+out-of-reality:
+  defaults:
+    depth: $DEPTH_MERGE
+  remotes:
+    origin: https://github.com/out-of-reality/out-of-reality.git
+  target: origin $ODOO_VERSION
+  merges:
+    - origin $ODOO_VERSION
+
+rest-framework:
+  defaults:
+    depth: $DEPTH_MERGE
+  remotes:
+    origin: https://github.com/out-of-reality/rest-framework.git
+  target: origin $ODOO_VERSION
+  merges:
+    - origin $ODOO_VERSION
+
+web-api:
+  defaults:
+    depth: $DEPTH_MERGE
+  remotes:
+    origin: https://github.com/out-of-reality/web-api.git
+  target: origin $ODOO_VERSION
+  merges:
+    - origin $ODOO_VERSION
+
+web:
+  defaults:
+    depth: $DEPTH_MERGE
+  remotes:
+    origin: https://github.com/out-of-reality/web.git
+  target: origin $ODOO_VERSION
+  merges:
+    - origin $ODOO_VERSION
