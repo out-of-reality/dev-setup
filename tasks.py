@@ -1221,7 +1221,7 @@ def pull(c):
         with c.cd(str(path)):
             try:
                 stash_result = c.run("git stash", hide=True)
-                stash_pushed = "No local changes" not in stash_result.stdout
+                stash_pushed = "No" not in stash_result.stdout
 
                 result = c.run("git rev-parse --abbrev-ref HEAD", hide=True)
                 current_branch = result.stdout.strip()
