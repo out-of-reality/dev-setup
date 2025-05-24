@@ -2,23 +2,13 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "inv restart",
+      "label": "start restart",
       "type": "shell",
-      "command": "inv restart",
+      "command": "bash -c \"if docker ps --format '{{.Names}}' | grep -q 'odoo-1'; then inv restart && sleep 2; else inv start --debugpy && sleep 2; fi\"",
       "problemMatcher": [],
       "options": {
         "cwd": "${workspaceFolder}"
       }
-    },
-    {
-      "label": "wait for odoo boot",
-      "type": "shell",
-      "command": "sleep 2"
-    },
-    {
-      "label": "restart and wait",
-      "dependsOn": ["inv restart", "wait for odoo boot"],
-      "dependsOrder": "sequence"
     }
   ]
 }

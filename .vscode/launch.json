@@ -16,7 +16,7 @@
         }
       ],
       "justMyCode": false,
-      "preLaunchTask": "restart and wait"
+      "preLaunchTask": "start restart"
     }
   ]
 }
