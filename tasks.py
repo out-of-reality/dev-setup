@@ -1137,26 +1137,14 @@ def restore_snapshot(
             c.run(f"{DOCKER_COMPOSE_CMD} start odoo db", pty=True)
 
 
-@task(
-    help={
-        "db": "Nombre de la base de datos a usar en la shell. Default: 'devel'.",
-    }
-)
-def shell(c, db="devel"):
-    """Entra a la shell del contenedor de Odoo con la base seleccionada, si existe."""
-    check_cmd = f"""{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres -tAc
-                    \"SELECT 1 FROM pg_database WHERE datname = '{db}'\""""
-    result = c.run(check_cmd, warn=True, hide=True)
-
-    if result.stdout.strip() != "1":
-        _logger.error(f"❌ La base de datos '{db}' no existe.")
-        return
-
-    c.run(
-        f"{DOCKER_COMPOSE_CMD} exec -e PGDATABASE={db} odoo bash",
-        pty=True,
-        env=dict(UID_ENV, PGDATABASE=db),
-    )
+@task(help={"root": "Si se pasa, abre la bash como root dentro del contenedor"})
+def bash(c, root=False):
+    """Abre una shell dentro del contenedor de Odoo
+    (por defecto como el usuario configurado, opcionalmente como root)."""
+    user_flag = "--user root" if root else ""
+    cmd = f"{DOCKER_COMPOSE_CMD} exec {user_flag} odoo bash"
+    with c.cd(str(PROJECT_ROOT)):
+        c.run(cmd, env=UID_ENV, pty=True)
 
 
 @task(help={"db": "Nombre de la base de datos de Odoo a eliminar"})
