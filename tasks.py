@@ -203,7 +203,7 @@ def write_code_workspace_file(c, cw_path=None):
         with open(cw_path) as cw_fd:
             cw_config = json.load(cw_fd)
     except (FileNotFoundError, json.decoder.JSONDecodeError):
-        pass  # Nevermind, we start with a new config
+        _logger.error("")
     # Static settings
     cw_config.setdefault("settings", {})
     cw_config["settings"].update(
@@ -578,7 +578,8 @@ def start(c, detach=True, debugpy=False, db="devel"):
             else:
                 check_base_cmd = (
                     f"{DOCKER_COMPOSE_CMD} run --rm odoo "
-                    f"psql -d {db} -tAc \"SELECT 1 FROM ir_module_module WHERE name='base'\""
+                    f"""psql -d {db} -tAc
+                    \"SELECT 1 FROM ir_module_module WHERE name='base'\""""
                 )
                 base_installed = c.run(
                     check_base_cmd, warn=True, hide=True, env=UID_ENV
@@ -616,7 +617,8 @@ def start(c, detach=True, debugpy=False, db="devel"):
         "extra": "Install all extra addons. Default: False",
         "private": "Install all private addons. Default: False",
         "enterprise": "Install all enterprise addons. Default: False",
-        "cur-file": "Path to the current file. Addon name will be obtained from there to install.",
+        "cur-file": """Path to the current file. Addon name will
+                       be obtained from there to install.""",
         "db": "Database name to install the addon into. Default: 'devel'",
     },
 )
@@ -1142,14 +1144,14 @@ def restore_snapshot(
 )
 def shell(c, db="devel"):
     """Entra a la shell del contenedor de Odoo con la base seleccionada, si existe."""
-    check_cmd = f"{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = '{db}'\""
+    check_cmd = f"""{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres -tAc
+                    \"SELECT 1 FROM pg_database WHERE datname = '{db}'\""""
     result = c.run(check_cmd, warn=True, hide=True)
 
     if result.stdout.strip() != "1":
-        print(f"❌ La base de datos '{db}' no existe.")
+        _logger.error(f"❌ La base de datos '{db}' no existe.")
         return
 
-    print(f"✅ Ingresando a la shell con la base '{db}'...")
     c.run(
         f"{DOCKER_COMPOSE_CMD} exec -e PGDATABASE={db} odoo bash",
         pty=True,
@@ -1163,7 +1165,9 @@ def dropdb(c, db=None):
     Elimina una base de datos de Odoo y su filestore asociado.
     """
     if not db:
-        print("Debe especificar el nombre de la base de datos con --db=<nombre>.")
+        _logger.error(
+            "Debe especificar el nombre de la base de datos con --db=<nombre>."
+        )
         return
 
     check_cmd = (
@@ -1173,12 +1177,13 @@ def dropdb(c, db=None):
     result = c.run(check_cmd, hide=True, warn=True)
     db_exists = result.ok and result.stdout.strip() == "1"
     if not db_exists:
-        print(f"La base de datos '{db}' no existe.")
+        _logger.error(f"La base de datos '{db}' no existe.")
         return
 
     terminate_cmd = (
         f"{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres "
-        f"-c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{db}';\""
+        f"""-c \"SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity WHERE datname = '{db}';\""""
     )
     c.run(terminate_cmd, pty=True)
 
@@ -1188,7 +1193,6 @@ def dropdb(c, db=None):
     )
     result = c.run(drop_cmd, warn=True, pty=True)
     if result.failed:
-        print(f"❌ Error al eliminar la base de datos '{db}':\n{result.stderr}")
         return
 
     filestore_dir = PROJECT_ROOT / "odoo" / "auto" / "filestore" / db
@@ -1197,10 +1201,57 @@ def dropdb(c, db=None):
         if path.exists():
             try:
                 shutil.rmtree(path)
-                print(f"🗑️  Eliminado: {path}")
             except Exception as e:
-                print(f"⚠️  No se pudo eliminar {path}: {e}")
+                _logger.error(f"⚠️  No se pudo eliminar {path}: {e}")
 
-    print(
-        f"✅ Se eliminó correctamente la base de datos '{db}' y su filestore asociado."
-    )
+
+@task()
+def pull(c):
+    """
+    Stash local changes, pull latest from origin/17.0 (or main for PROJECT_ROOT),
+    rebase current branch onto base, and reapply local changes.
+    Applies to all repos in odoo/custom/src and the root repo (main).
+    """
+    errors = []
+
+    def handle_repo(path: Path, base_branch: str):
+        if not (path / ".git").exists():
+            return
+        repo_name = path.name
+        with c.cd(str(path)):
+            try:
+                stash_result = c.run("git stash", hide=True)
+                stash_pushed = "No local changes" not in stash_result.stdout
+
+                result = c.run("git rev-parse --abbrev-ref HEAD", hide=True)
+                current_branch = result.stdout.strip()
+
+                c.run("git fetch origin", hide=True)
+                c.run(f"git checkout {base_branch}", hide=True)
+                c.run(f"git pull origin {base_branch}", hide=True)
+
+                if not current_branch == base_branch:
+                    c.run(f"git checkout {current_branch}", hide=True)
+                    c.run(f"git rebase {base_branch}", hide=True)
+
+                if stash_pushed:
+                    c.run("git stash pop", hide=True)
+
+            except Exception as e:
+                errors.append(repo_name)
+                _logger.error("❌ Error processing %s: %s", repo_name, e)
+                c.run("git rebase --abort", warn=True, hide=True)
+                c.run("git reset --hard", warn=True, hide=True)
+                if stash_pushed:
+                    c.run("git stash pop", warn=True, hide=True)
+
+    src_path = PROJECT_ROOT / "odoo" / "custom" / "src"
+    for repo in src_path.iterdir():
+        handle_repo(repo, base_branch="17.0")
+
+    handle_repo(PROJECT_ROOT, base_branch="main")
+
+    if errors:
+        _logger.error("\n🚨 Some repositories failed:")
+        for r in errors:
+            _logger.error("  - ❌ %s", r)

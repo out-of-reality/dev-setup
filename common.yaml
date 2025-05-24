@@ -51,16 +51,14 @@ services:
     cap_add:
       - SYS_PTRACE
     environment:
-      DEFAULT_RELAY_HOST: "[smtp.gmail.com
-]:587"
+      DEFAULT_RELAY_HOST: "[smtp.gmail.com]:587"
       LOG_LEVEL: info
       ENABLE_SRS: 1
       ONE_DIR: 1
       PERMIT_DOCKER: connected-networks
       POSTFIX_INET_PROTOCOLS: ipv4
       POSTFIX_MESSAGE_SIZE_LIMIT: 52428800 # 50 MiB
-      RELAY_HOST: "smtp.gmail.com
-"
+      RELAY_HOST: "smtp.gmail.com"
       RELAY_PORT: "587"
       RELAY_USER: "4177asd@gmail.com"
       SMTP_ONLY: 1
