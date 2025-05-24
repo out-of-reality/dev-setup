@@ -15,7 +15,8 @@
           "remoteRoot": "/opt/odoo"
         }
       ],
-      "justMyCode": false
+      "justMyCode": false,
+      "preLaunchTask": "restart and wait"
     }
   ]
 }

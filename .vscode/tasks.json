@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "inv restart",
+      "type": "shell",
+      "command": "inv restart",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "wait for odoo boot",
+      "type": "shell",
+      "command": "sleep 2"
+    },
+    {
+      "label": "restart and wait",
+      "dependsOn": ["inv restart", "wait for odoo boot"],
+      "dependsOrder": "sequence"
+    }
+  ]
+}
