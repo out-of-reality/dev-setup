@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import time
 from datetime import datetime
+from glob import iglob
 from itertools import chain
 from logging import getLogger
 from pathlib import Path
@@ -202,8 +203,10 @@ def write_code_workspace_file(c, cw_path=None):
     try:
         with open(cw_path) as cw_fd:
             cw_config = json.load(cw_fd)
-    except (FileNotFoundError, json.decoder.JSONDecodeError):
-        pass  # Nevermind, we start with a new config
+    except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
+        _logger.info(
+            f"Could not load config file at {cw_path}: {e}"
+        )  # Nevermind, we start with a new config
     # Static settings
     cw_config.setdefault("settings", {})
     cw_config["settings"].update(
@@ -535,22 +538,18 @@ def lint(c, verbose=False):
         c.run(cmd)
 
 
-@task(
-    help={
-        "db": "Nombre de la base de datos a usar. Si no existe, se crea con -i base.",
-        "detach": "Levantar contenedores en modo detach. Default: True",
-        "debugpy": "Habilita debugpy para debug en VSCode. Default: False",
-    }
-)
-def start(c, detach=True, debugpy=False, db="devel"):
-    """Start environment. Usa --db= para cambiar la base a usar"""
+@task()
+def start(c, detach=True, debugpy=False):
+    """Start environment."""
     cmd = DOCKER_COMPOSE_CMD + " up"
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml"
+        mode="w",
+        suffix=".yaml",
     ) as tmp_docker_compose_file:
         if debugpy:
+            # Remove auto-reload
             cmd = (
-                f"{DOCKER_COMPOSE_CMD} -f docker-compose.yml "
+                DOCKER_COMPOSE_CMD + " -f docker-compose.yml "
                 f"-f {tmp_docker_compose_file.name} up"
             )
             _remove_auto_reload(
@@ -559,52 +558,21 @@ def start(c, detach=True, debugpy=False, db="devel"):
             )
         if detach:
             cmd += " --detach"
-
         with c.cd(str(PROJECT_ROOT)):
-            check_db_cmd = (
-                f"{DOCKER_COMPOSE_CMD} run --rm -e LOG_LEVEL=WARNING odoo "
-                f"psql -tAc \"SELECT 1 FROM pg_database WHERE datname = '{db}'\""
-            )
-            db_exists = c.run(check_db_cmd, warn=True, hide=True, env=UID_ENV)
-
-            if not db_exists.stdout.strip():
-                _run = f"{DOCKER_COMPOSE_CMD} run --rm -l traefik.enable=false odoo"
-                c.run(f"{_run} createdb {db}", env=UID_ENV, pty=True)
-                c.run(
-                    f"{_run} odoo -d {db} -i base --stop-after-init",
-                    env=UID_ENV,
-                    pty=True,
-                )
-            else:
-                check_base_cmd = (
-                    f"{DOCKER_COMPOSE_CMD} run --rm odoo "
-                    f"psql -d {db} -tAc \"SELECT 1 FROM ir_module_module WHERE name='base'\""
-                )
-                base_installed = c.run(
-                    check_base_cmd, warn=True, hide=True, env=UID_ENV
-                )
-                if not base_installed.stdout.strip():
-                    _run = f"{DOCKER_COMPOSE_CMD} run --rm -l traefik.enable=false odoo"
-                    c.run(
-                        f"{_run} odoo -d {db} -i base --stop-after-init",
-                        env=UID_ENV,
-                        pty=True,
-                    )
-
             result = c.run(
                 cmd,
                 pty=True,
                 env=dict(
                     UID_ENV,
                     DOODBA_DEBUGPY_ENABLE=str(int(debugpy)),
-                    PGDATABASE=db,
                 ),
             )
-            if not any(
-                k in result.stdout for k in ("Recreating", "Starting", "Creating")
+            if not (
+                "Recreating" in result.stdout
+                or "Starting" in result.stdout
+                or "Creating" in result.stdout
             ):
                 restart(c)
-
         _logger.info("Waiting for services to spin up...")
         time.sleep(SERVICES_WAIT_TIME)
 
@@ -616,8 +584,8 @@ def start(c, detach=True, debugpy=False, db="devel"):
         "extra": "Install all extra addons. Default: False",
         "private": "Install all private addons. Default: False",
         "enterprise": "Install all enterprise addons. Default: False",
-        "cur-file": "Path to the current file. Addon name will be obtained from there to install.",
-        "db": "Database name to install the addon into. Default: 'devel'",
+        "cur-file": "Path to the current file."
+        " Addon name will be obtained from there to install.",
     },
 )
 def install(
@@ -628,7 +596,6 @@ def install(
     extra=False,
     private=False,
     enterprise=False,
-    db="devel",
 ):
     """Install Odoo addons
 
@@ -645,8 +612,7 @@ def install(
                 " See --help for details."
             )
         modules = cur_module
-
-    cmd = f"{DOCKER_COMPOSE_CMD} run --rm -e DB_FILTER=^{db}$ odoo addons init"
+    cmd = DOCKER_COMPOSE_CMD + " run --rm odoo addons init"
     if core:
         cmd += " --core"
     if extra:
@@ -657,14 +623,109 @@ def install(
         cmd += " --enterprise"
     if modules:
         cmd += f" -w {modules}"
-
     with c.cd(str(PROJECT_ROOT)):
-        c.run(f"{DOCKER_COMPOSE_CMD} stop odoo")
+        c.run(DOCKER_COMPOSE_CMD + " stop odoo")
         c.run(
             cmd,
             env=UID_ENV,
             pty=True,
         )
+
+
+@task(
+    help={
+        "module": "Specific Odoo module to update.",
+        "all": "Update all modules. Takes a lot of time. [default: False]",
+        "repo": "Update all modules from a specific repository.",
+        "msgmerge": "Merge .pot changes into all .po files. [default: True]",
+        "fuzzy_matching": "Use fuzzy matching when merging. [default: False]",
+        "purge_old_translations": "Remove lines with old translations. [default: True]",
+        "remove_dates": "Remove dates from .po files. [default: True]",
+    }
+)
+def updatepot(
+    c,
+    module=None,
+    _all=False,
+    repo=None,
+    msgmerge=True,
+    fuzzy_matching=False,
+    purge_old_translations=True,
+    remove_dates=True,
+):
+    """Updates POT of a given module"""
+    if not module and not _all and not repo:
+        cur_module = _get_cwd_addon(Path.cwd())
+        if not cur_module:
+            raise exceptions.ParseError(
+                msg="Odoo addon to update translation not found "
+                "You must provide at least one of: -m {module}, "
+                "be in the subdirectory of a module, --all or -r {repo} "
+                "See --help for details."
+            )
+        module = cur_module
+
+    cmd = (
+        DOCKER_COMPOSE_CMD
+        + f" run --rm  -v {PROJECT_ROOT}/odoo/custom:/tmp/odoo/custom:rw,z "
+        f"-v {PROJECT_ROOT}/odoo/auto:/tmp/odoo/auto:rw,z odoo "
+        "click-odoo-makepot --addons-dir "
+        f"{'/tmp/odoo/auto/addons' if not repo else '/tmp/odoo/custom/src/' + repo}/"
+    )
+
+    cmd += " --msgmerge" if msgmerge else " --no-msgmerge"
+    cmd += " --no-fuzzy-matching" if not fuzzy_matching else " --fuzzy-matching"
+    cmd += (
+        " --purge-old-translations"
+        if purge_old_translations
+        else " --no-purge-old-translations"
+    )
+    if not _all and not repo:
+        cmd += f" -m {module}"
+
+    with c.cd(str(PROJECT_ROOT)):
+        c.run(DOCKER_COMPOSE_CMD + " stop odoo")
+        c.run(
+            cmd,
+            env=UID_ENV,
+            pty=True,
+        )
+    glob = (
+        f"{PROJECT_ROOT}/odoo/custom/src/{'*' if not repo else repo}"
+        f"/{'*' if _all or repo else module}/i18n/"
+    )
+    new_files = iglob(f"{glob}/*.po*")
+    for new_file in new_files:
+        file_name = os.path.basename(new_file)
+        if file_name.endswith("~"):
+            os.remove(new_file)
+            continue
+        with open(new_file) as fd:
+            content = fd.read()
+        new_lines = []
+        for line in content.splitlines():
+            if remove_dates and (
+                line.startswith('"POT-Creation-Date')
+                or line.startswith('"PO-Revision-Date')
+            ):
+                continue
+            new_lines.append(line)
+        content = "\n".join(new_lines)
+        with open(new_file, "w") as fd:
+            fd.write(content.strip() + "\n")
+    _logger.info(".po[t] files updated")
+    precommit_cmd = f"pre-commit run --files {' '.join(iglob(f'{glob}/*.po*'))}"
+
+    if not repo and module:
+        for folder in iglob(f"{PROJECT_ROOT}/odoo/custom/src/*/*"):
+            if os.path.isdir(folder) and os.path.basename(folder) == module:
+                repo = os.path.basename(os.path.dirname(folder))
+                break
+    precommit_folder = (
+        str(PROJECT_ROOT) + f"/odoo/custom/src/{repo}" if repo != "private" else ""
+    )
+    with c.cd(str(precommit_folder)):
+        c.run(precommit_cmd)
 
 
 @task(
@@ -805,7 +866,7 @@ def _get_module_list(
         "extra": "Test all extra addons. Default: False",
         "private": "Test all private addons. Default: False",
         "enterprise": "Test all enterprise addons. Default: False",
-        "skip": "List of addons to skip. Default: []",
+        "skip": "Comma-separated list of modules to skip. Default: ''",
         "debugpy": "Whether or not to run tests in a VSCode debugging session. "
         "Default: False",
         "cur-file": "Path to the current file."
@@ -862,9 +923,10 @@ def test(
         if not m_to_skip:
             continue
         if m_to_skip not in modules_list:
-            _logger.warn(
-                "%s not found in the list of addons to test: %s", (m_to_skip, modules)
+            _logger.warning(
+                "%s not found in the list of addons to test: %s", m_to_skip, modules
             )
+            continue
         modules_list.remove(m_to_skip)
     modules = ",".join(modules_list)
     odoo_command.append(modules)
@@ -1133,74 +1195,3 @@ def restore_snapshot(
         )
         if "Stopping" in cur_state:
             c.run(f"{DOCKER_COMPOSE_CMD} start odoo db", pty=True)
-
-
-@task(
-    help={
-        "db": "Nombre de la base de datos a usar en la shell. Default: 'devel'.",
-    }
-)
-def shell(c, db="devel"):
-    """Entra a la shell del contenedor de Odoo con la base seleccionada, si existe."""
-    check_cmd = f"{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = '{db}'\""
-    result = c.run(check_cmd, warn=True, hide=True)
-
-    if result.stdout.strip() != "1":
-        print(f"❌ La base de datos '{db}' no existe.")
-        return
-
-    print(f"✅ Ingresando a la shell con la base '{db}'...")
-    c.run(
-        f"{DOCKER_COMPOSE_CMD} exec -e PGDATABASE={db} odoo bash",
-        pty=True,
-        env=dict(UID_ENV, PGDATABASE=db),
-    )
-
-
-@task(help={"db": "Nombre de la base de datos de Odoo a eliminar"})
-def dropdb(c, db=None):
-    """
-    Elimina una base de datos de Odoo y su filestore asociado.
-    """
-    if not db:
-        print("Debe especificar el nombre de la base de datos con --db=<nombre>.")
-        return
-
-    check_cmd = (
-        f"{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres "
-        f"-tAc \"SELECT 1 FROM pg_database WHERE datname='{db}';\""
-    )
-    result = c.run(check_cmd, hide=True, warn=True)
-    db_exists = result.ok and result.stdout.strip() == "1"
-    if not db_exists:
-        print(f"La base de datos '{db}' no existe.")
-        return
-
-    terminate_cmd = (
-        f"{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres "
-        f"-c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{db}';\""
-    )
-    c.run(terminate_cmd, pty=True)
-
-    drop_cmd = (
-        f"{DOCKER_COMPOSE_CMD} exec -T db psql -U odoo -d postgres "
-        f'-c "DROP DATABASE IF EXISTS {db};"'
-    )
-    result = c.run(drop_cmd, warn=True, pty=True)
-    if result.failed:
-        print(f"❌ Error al eliminar la base de datos '{db}':\n{result.stderr}")
-        return
-
-    filestore_dir = PROJECT_ROOT / "odoo" / "auto" / "filestore" / db
-    snapshot_dir = PROJECT_ROOT / "odoo" / "auto" / ".snapshots" / db
-    for path in [filestore_dir, snapshot_dir]:
-        if path.exists():
-            try:
-                shutil.rmtree(path)
-                print(f"🗑️  Eliminado: {path}")
-            except Exception as e:
-                print(f"⚠️  No se pudo eliminar {path}: {e}")
-
-    print(
-        f"✅ Se eliminó correctamente la base de datos '{db}' y su filestore asociado."
-    )

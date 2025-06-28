@@ -11,6 +11,7 @@ version: "2.4"
 
 services:
   odoo:
+    image: docker.io/outofreality/odoo-17.0:17.0
     build:
       context: ./odoo
       args:

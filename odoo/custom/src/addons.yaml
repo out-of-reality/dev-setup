@@ -1,3 +1,5 @@
+enterprise: "*"
+
 out-of-reality: "*"
 
 rest-framework:
