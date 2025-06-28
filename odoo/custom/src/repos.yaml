@@ -15,6 +15,15 @@
     # Example of a merge of the PR with the number <PR>
     # - oca refs/pull/<PR>/head
 
+enterprise:
+  defaults:
+    depth: $DEPTH_MERGE
+  remotes:
+    origin: git@github.com:out-of-reality/enterprise.git
+  target: origin $ODOO_VERSION
+  merges:
+    - origin $ODOO_VERSION
+
 out-of-reality:
   defaults:
     depth: $DEPTH_MERGE

@@ -10,11 +10,11 @@ services:
         UID: "${UID:-1000}"
         GID: "${GID:-1000}"
     environment:
-      EMAIL_FROM: ""
+      EMAIL_FROM: "4177asd@gmail.com"
       PGDATABASE: &dbname prod
       PGUSER: &dbuser "odoo"
       PROXY_MODE: "true"
-      LIST_DB: "true"
+      LIST_DB: "false"
     tty: true
     volumes:
       - filestore:/var/lib/odoo:z
@@ -40,7 +40,8 @@ services:
 
   smtpreal:
     image: ghcr.io/docker-mailserver/docker-mailserver:13
-    hostname: "smtp."
+    hostname: mail
+    domainname: francoleyes.xyz
     stop_grace_period: 1m
     volumes:
       - mailconfig:/tmp/docker-mailserver:z
@@ -51,19 +52,17 @@ services:
     cap_add:
       - SYS_PTRACE
     environment:
-      DEFAULT_RELAY_HOST: "[smtp.gmail.com
-]:587"
+      DEFAULT_RELAY_HOST: "[smtp.gmail.com]:587"
       LOG_LEVEL: info
       ENABLE_SRS: 1
       ONE_DIR: 1
       PERMIT_DOCKER: connected-networks
       POSTFIX_INET_PROTOCOLS: ipv4
       POSTFIX_MESSAGE_SIZE_LIMIT: 52428800 # 50 MiB
-      RELAY_HOST: "smtp.gmail.com
-"
+      RELAY_HOST: "smtp.gmail.com"
       RELAY_PORT: "587"
       RELAY_USER: "4177asd@gmail.com"
       SMTP_ONLY: 1
-      SRS_DOMAINNAME: ""
-      SRS_EXCLUDE_DOMAINS: ""
+      SRS_DOMAINNAME: "gmail.com"
+      SRS_EXCLUDE_DOMAINS: "gmail.com"
       SRS_SENDER_CLASSES: envelope_sender,header_sender

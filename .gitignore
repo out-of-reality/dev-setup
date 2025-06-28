@@ -2,11 +2,9 @@
 /odoo/auto
 /odoo/custom/src/*/
 !/odoo/custom/src/private/
-!/odoo/custom/src/addons.yaml
-!/odoo/custom/src/repos/yaml
 
 # Ignore docker-compose.yml and overrides by default, to allow easy defaults per clone
-# /docker-compose.yml
+/docker-compose.yml
 /docker-compose.override.yml
 
 # Compiled formats, cache, temporary files, git garbage
@@ -17,16 +15,16 @@
 **.orig
 
 # User-specific or editor-specific development files and settings
-# .vscode/*
-# !/.vscode/*.jinja
-# !/.vscode/extensions.json
-# !/.vscode/launch.json
-# !/.vscode/settings.json
-# !/.vscode/tasks.json
-# /odoo/custom/src/private/.vscode/*
+.vscode/*
+!/.vscode/*.jinja
+!/.vscode/extensions.json
+!/.vscode/launch.json
+!/.vscode/settings.json
+!/.vscode/tasks.json
+/odoo/custom/src/private/.vscode/*
 /.venv
-# /doodba.*.code-workspace
-# /src
+/doodba.*.code-workspace
+/src
 
 # Project-specific docker configurations
-# /.docker/
+/.docker/

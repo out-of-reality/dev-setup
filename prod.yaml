@@ -6,6 +6,7 @@ services:
       file: common.yaml
       service: odoo
     restart: unless-stopped
+    hostname: "outofreality.francoleyes.xyz"
     env_file:
       - .docker/odoo.env
       - .docker/db-access.env
@@ -15,30 +16,92 @@ services:
       INITIAL_LANG: "es_AR"
       ODOO_BUS_PUBLIC_SAMESITE_WS: 1
       SMTP_SERVER: smtplocal
-      PGHOST: out-of-reality-17-0-prod-db
+      PGHOST: out_of_reality-17-0-prod-db
     depends_on:
       - db
       - smtp
     networks:
       default:
+      inverseproxy_shared:
     labels:
-      doodba.domain.main: ""
+      doodba.domain.main: "outofreality.francoleyes.xyz"
+      traefik.enable: "true"
+      traefik.domain: "outofreality.francoleyes.xyz"
+      traefik.forbiddenCrawlers-0.frontend.headers.customResponseHeaders:
+        "X-Robots-Tag:noindex, nofollow"
+      traefik.forbiddenCrawlers-0.frontend.rule: Host(`outofreality.francoleyes.xyz`);Path:/web,/web/{anything:.*},/website/info,/website/info/{anything:.*}
+      traefik.main-0.frontend.rule: Host(`outofreality.francoleyes.xyz`)
+      traefik.longpolling-0.frontend.rule: Host(`outofreality.francoleyes.xyz`);Path:/websocket,/websocket/{anything:.*}
+      traefik.longpolling-0.port: 8072
+      traefik.http.middlewares.out_of_reality-17-0-prod-buffering.buffering.retryExpression:
+        IsNetworkError() && Attempts() < 5
+      traefik.http.middlewares.out_of_reality-17-0-prod-compress.compress: "true"
+      traefik.http.middlewares.out_of_reality-17-0-prod-forbid-crawlers.headers.customResponseHeaders.X-Robots-Tag:
+        "noindex, nofollow"
+      traefik.http.middlewares.out_of_reality-17-0-prod-addSTS.headers.forceSTSHeader: "true"
+      traefik.http.middlewares.out_of_reality-17-0-prod-forceSecure.redirectScheme.scheme: https
+      traefik.http.middlewares.out_of_reality-17-0-prod-forceSecure.redirectScheme.permanent: "true"
+      traefik.http.middlewares.out_of_reality-17-0-prod-override-ws-headers.headers.customRequestHeaders.X-Forwarded-Proto: "https"
+      traefik.http.services.out_of_reality-17-0-prod-main.loadbalancer.server.port: 8069
+      traefik.http.services.out_of_reality-17-0-prod-longpolling.loadbalancer.server.port: 8072
+      traefik.http.routers.out_of_reality-17-0-prod-main-0.rule: Host(`outofreality.francoleyes.xyz`)
+      traefik.http.routers.out_of_reality-17-0-prod-main-0.service: out_of_reality-17-0-prod-main
+      traefik.http.routers.out_of_reality-17-0-prod-main-0.middlewares:
+        out_of_reality-17-0-prod-addSTS, out_of_reality-17-0-prod-buffering,
+        out_of_reality-17-0-prod-compress, out_of_reality-17-0-prod-forceSecure
+      traefik.http.routers.out_of_reality-17-0-prod-main-secure-0.rule: Host(`outofreality.francoleyes.xyz`)
+      traefik.http.routers.out_of_reality-17-0-prod-main-secure-0.service: out_of_reality-17-0-prod-main
+      traefik.http.routers.out_of_reality-17-0-prod-main-secure-0.middlewares:
+        out_of_reality-17-0-prod-addSTS, out_of_reality-17-0-prod-buffering,
+        out_of_reality-17-0-prod-compress, out_of_reality-17-0-prod-forceSecure
+      traefik.http.routers.out_of_reality-17-0-prod-main-secure-0.tls: "true"
+      traefik.http.routers.out_of_reality-17-0-prod-main-secure-0.tls.certResolver: letsencrypt
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-0.rule:
+        Host(`outofreality.francoleyes.xyz`) && Path(`/websocket`)
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-0.service: out_of_reality-17-0-prod-longpolling
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-0.middlewares:
+        out_of_reality-17-0-prod-addSTS, out_of_reality-17-0-prod-forceSecure,
+        out_of_reality-17-0-prod-override-ws-headers
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-secure-0.rule:
+        Host(`outofreality.francoleyes.xyz`) && Path(`/websocket`)
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-secure-0.service: out_of_reality-17-0-prod-longpolling
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-secure-0.middlewares:
+        out_of_reality-17-0-prod-addSTS, out_of_reality-17-0-prod-forceSecure,
+        out_of_reality-17-0-prod-override-ws-headers
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-secure-0.tls: "true"
+      traefik.http.routers.out_of_reality-17-0-prod-longpolling-secure-0.tls.certResolver: letsencrypt
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-0.rule:
+        Host(`outofreality.francoleyes.xyz`) && (PathPrefix(`/web/`, `/website/info/`)
+        || Path(`/web`, `/website/info`))
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-0.service: out_of_reality-17-0-prod-main
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-0.middlewares:
+        out_of_reality-17-0-prod-addSTS, out_of_reality-17-0-prod-buffering,
+        out_of_reality-17-0-prod-compress, out_of_reality-17-0-prod-forbid-crawlers,
+        out_of_reality-17-0-prod-forceSecure
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-secure-0.rule:
+        Host(`outofreality.francoleyes.xyz`) && (PathPrefix(`/web/`, `/website/info/`)
+        || Path(`/web`, `/website/info`))
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-secure-0.service: out_of_reality-17-0-prod-main
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-secure-0.middlewares:
+        out_of_reality-17-0-prod-addSTS, out_of_reality-17-0-prod-buffering,
+        out_of_reality-17-0-prod-compress, out_of_reality-17-0-prod-forbid-crawlers,
+        out_of_reality-17-0-prod-forceSecure
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-secure-0.tls: "true"
+      traefik.http.routers.out_of_reality-17-0-prod-forbiddenCrawlers-secure-0.tls.certResolver: letsencrypt
 
   db:
     extends:
       file: common.yaml
       service: db
     environment:
-      DB_HOST: out-of-reality-17-0-prod-db
+      DB_HOST: out_of_reality-17-0-prod-db
     env_file:
       - .docker/db-creation.env
     restart: unless-stopped
     networks:
       default:
         aliases:
-          - "out-of-reality-17-0-prod-db"
-    ports:
-      - "5432:5432"
+          - "out_of_reality-17-0-prod-db"
 
   smtp:
     extends:
@@ -51,6 +114,9 @@ services:
         aliases:
           - smtplocal
     restart: unless-stopped
+
+  face_recognition:
+    image: outofreality/face_recognition:latest
 
 networks:
   default:
